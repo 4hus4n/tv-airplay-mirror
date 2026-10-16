@@ -20,7 +20,7 @@ unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0
 
 missing=0
 for e in appsrc queue h264parse h265parse decodebin avdec_h264 avdec_aac avdec_alac aacparse \
-         videoconvert videoscale videoflip d3d11videosink d3d11h264dec autovideosink imagefreeze \
+         videoconvert videoscale videoflip d3d11videosink autovideosink level imagefreeze \
          textoverlay jpegdec audioconvert audioresample volume autoaudiosink wasapisink playbin fakesink; do
     if "$DIST/bin/gst-inspect-1.0.exe" "$e" > /dev/null 2>&1; then
         echo "ok      $e"

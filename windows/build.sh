@@ -33,7 +33,7 @@ cp "$PFX/libexec/gstreamer-1.0/gst-plugin-scanner.exe" "$DIST/libexec/gstreamer-
 PLUGINS="coreelements app typefindfunctions playback autodetect
  videoparsersbad audioparsers libav d3d11 d3d12 dxva
  videoconvertscale videoconvert videoscale videofilter imagefreeze pango
- jpeg png audioconvert audioresample volume wasapi wasapi2 directsound
+ jpeg png level audioconvert audioresample volume wasapi wasapi2 directsound
  debugutilsbad"
 for p in $PLUGINS; do
     f="$PFX/lib/gstreamer-1.0/libgst$p.dll"
