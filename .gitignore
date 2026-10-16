@@ -5,3 +5,5 @@ app/.cxx/
 local.properties
 .idea/
 *.iml
+dist/
+windows/work/

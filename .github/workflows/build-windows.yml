@@ -1,0 +1,70 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ "windows/**", ".github/workflows/build-windows.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-libplist
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-gstreamer
+            mingw-w64-ucrt-x86_64-gst-plugins-base
+            mingw-w64-ucrt-x86_64-gst-plugins-good
+            mingw-w64-ucrt-x86_64-gst-plugins-bad
+            mingw-w64-ucrt-x86_64-gst-libav
+
+      - name: Build
+        run: |
+          set -o pipefail
+          ./windows/build.sh 2>&1 | tee build.log || {
+            grep -iE "error|not found|No such" build.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          }
+
+      - name: Verify bundle
+        run: ./windows/verify.sh 2>&1 | tee verify.log; s=${PIPESTATUS[0]}; grep MISSING verify.log | while IFS= read -r l; do echo "::error::$l"; done; exit $s
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=1.0.${{ github.run_number }}" windows\installer.iss
+          Compress-Archive -Path dist\AirMirror -DestinationPath dist\AirMirror-PC-Portable.zip
+
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pc
+          name: AirMirror for Windows (PC / laptop)
+          body: |
+            AirPlay screen-mirroring receiver for Windows 10/11 (64-bit). Build 1.0.${{ github.run_number }}.
+            Download **AirMirror-PC-Setup.exe**, install, then on your iPhone: Control Centre → Screen Mirroring → pick your PC.
+            No-install option: AirMirror-PC-Portable.zip (extract, run AirMirror.exe).
+          files: |
+            dist/AirMirror-PC-Setup.exe
+            dist/AirMirror-PC-Portable.zip
+          make_latest: false
+          overwrite_files: true
