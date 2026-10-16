@@ -5,12 +5,17 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist/AirMirror"
 W() { cygpath -w "$1"; }
+PLUG="$(W "$DIST/lib/gstreamer-1.0")"
+SCAN="$(W "$DIST/libexec/gstreamer-1.0/gst-plugin-scanner.exe")"
+REG="$(W "$ROOT/windows/work/verify-registry.bin")"
+KEY="$(W "$ROOT/windows/work/ci.pem")"
 
-export PATH="$DIST/bin:/c/Windows/System32:/c/Windows"
-export GST_PLUGIN_SYSTEM_PATH_1_0="$(W "$DIST/lib/gstreamer-1.0")"
-export GST_PLUGIN_SYSTEM_PATH="$GST_PLUGIN_SYSTEM_PATH_1_0"
-export GST_PLUGIN_SCANNER_1_0="$(W "$DIST/libexec/gstreamer-1.0/gst-plugin-scanner.exe")"
-export GST_REGISTRY_1_0="$(W "$ROOT/windows/work/verify-registry.bin")"
+# bundle first; /usr/bin only for shell tools (it holds no MinGW/GStreamer DLLs)
+export PATH="$DIST/bin:/usr/bin:/c/Windows/System32:/c/Windows"
+export GST_PLUGIN_SYSTEM_PATH_1_0="$PLUG"
+export GST_PLUGIN_SYSTEM_PATH="$PLUG"
+export GST_PLUGIN_SCANNER_1_0="$SCAN"
+export GST_REGISTRY_1_0="$REG"
 unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0
 
 missing=0
@@ -26,7 +31,7 @@ for e in appsrc queue h264parse h265parse decodebin avdec_h264 avdec_aac avdec_a
 done
 
 echo "== starting uxplay.exe for 12 seconds"
-( cd "$DIST/bin" && timeout 12 ./uxplay.exe -n "CI Check" -nh -vs d3d11videosink -key "$(W "$ROOT/windows/work/ci.pem")" ) > "$ROOT/windows/work/uxplay-ci.log" 2>&1
+( cd "$DIST/bin" && timeout 12 ./uxplay.exe -n "CI Check" -nh -vs d3d11videosink -key "$KEY" ) > "$ROOT/windows/work/uxplay-ci.log" 2>&1
 code=$?
 cat "$ROOT/windows/work/uxplay-ci.log" | head -60
 # timeout => 124 means it was still running happily
