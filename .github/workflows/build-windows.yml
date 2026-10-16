@@ -45,7 +45,33 @@ jobs:
           }
 
       - name: Verify bundle
-        run: ./windows/verify.sh 2>&1 | tee verify.log; s=${PIPESTATUS[0]}; grep MISSING verify.log | while IFS= read -r l; do echo "::error::$l"; done; exit $s
+        run: |
+          set +e +o pipefail
+          ./windows/verify.sh > verify.log 2>&1
+          s=$?
+          cat verify.log
+          grep MISSING verify.log | head -10 | while IFS= read -r l; do echo "::error::$l"; done
+          exit $s
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p ci-logs
+          cp build.log verify.log windows/work/uxplay-ci.log ci-logs/ 2>/dev/null || true
+          ls dist/AirMirror/lib/gstreamer-1.0 > ci-logs/plugins.txt 2>/dev/null || true
+          ls dist/AirMirror/bin > ci-logs/bin.txt 2>/dev/null || true
+          for f in ci-logs/*; do mv "$f" "$f.txt" 2>/dev/null; done
+
+      - name: Upload logs
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ci-logs
+          name: CI logs (debug)
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: ci-logs/*
 
       - name: Build installer
         shell: pwsh
