@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:keepScreenOn="true">
+
+    <com.ahusan.airmirror.AspectFrameLayout
+        android:id="@+id/videoFrame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center">
+
+        <SurfaceView
+            android:id="@+id/surface"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </com.ahusan.airmirror.AspectFrameLayout>
+
+    <!-- Idle / waiting screen -->
+    <FrameLayout
+        android:id="@+id/idleView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#0B1320">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/card_bg"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="40dp">
+
+            <ImageView
+                android:layout_width="88dp"
+                android:layout_height="88dp"
+                android:src="@drawable/ic_launcher" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Ready to mirror"
+                android:textColor="#8FB8DE"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/deviceName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="#FFFFFF"
+                android:textSize="40sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="#B0BEC5"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:gravity="center"
+                android:lineSpacingExtra="6dp"
+                android:text="On your iPhone or iPad (same Wi-Fi):\nControl Centre → Screen Mirroring → pick this TV"
+                android:textColor="#E0E0E0"
+                android:textSize="20sp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/renameBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:background="@drawable/button_bg"
+                    android:paddingStart="28dp"
+                    android:paddingEnd="28dp"
+                    android:text="Rename TV"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp" />
+
+                <Button
+                    android:id="@+id/codeBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="16dp"
+                    android:background="@drawable/button_bg"
+                    android:paddingStart="28dp"
+                    android:paddingEnd="28dp"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Connection code shown when "Require code" is on -->
+    <TextView
+        android:id="@+id/pinView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/card_bg"
+        android:padding="40dp"
+        android:textColor="#FFFFFF"
+        android:textSize="56sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/toast"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="24dp"
+        android:background="@drawable/card_bg"
+        android:paddingStart="24dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="12dp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:visibility="gone" />
+</FrameLayout>
