@@ -43,9 +43,13 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; let the iPhone reach the receiver through Windows Firewall
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AirMirror"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AirMirror"" dir=in action=allow program=""{app}\bin\uxplay.exe"" enable=yes profile=any"; Flags: runhidden
-Filename: "{app}\AirMirror.exe"; Description: "Start AirMirror now"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AirMirror Android"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AirMirror Android"" dir=in action=allow program=""{app}\bin\amreceiver.exe"" enable=yes profile=any"; Flags: runhidden
+Filename: "{app}\AirMirror.exe"; Description: "Start AirMirror now"; Flags: nowait postinstall runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im AirMirror.exe"; Flags: runhidden; RunOnceId: "KillTray"
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im uxplay.exe"; Flags: runhidden; RunOnceId: "KillReceiver"
+Filename: "{sys}\taskkill.exe"; Parameters: "/f /im amreceiver.exe"; Flags: runhidden; RunOnceId: "KillAndroid"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AirMirror Android"""; Flags: runhidden; RunOnceId: "DelFirewallAndroid"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AirMirror"""; Flags: runhidden; RunOnceId: "DelFirewall"

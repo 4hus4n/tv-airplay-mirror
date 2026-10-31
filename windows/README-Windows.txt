@@ -4,11 +4,12 @@ AirMirror for Windows
 Mirror your iPhone or iPad screen (with sound) to this PC or laptop.
 
 1. Start AirMirror (Start menu or desktop). An icon appears in the taskbar tray near the clock.
-2. On the iPhone (same Wi-Fi as the PC): Control Centre > Screen Mirroring > pick your PC's name.
+2. iPhone (same Wi-Fi as the PC): Control Centre > Screen Mirroring > pick your PC's name.
+   Android phone: install AirMirror-Sender.apk, open it, tap your PC's name.
 3. The iPhone screen opens full screen on the PC. Alt+Enter switches between full screen and a window.
    Stop mirroring on the iPhone to close it.
 
-Right-click the tray icon for: Change name, Start with Windows, Restart, Fix firewall, Show log, Quit.
+Right-click the tray icon for: Check for updates, Change name, Start with Windows, Restart, Fix firewall, Show log, Quit.
 
 If the iPhone can't see the PC:
 - Make sure both are on the same Wi-Fi (not a guest network).

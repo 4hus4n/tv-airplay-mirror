@@ -30,6 +30,15 @@ for e in appsrc queue h264parse h265parse decodebin avdec_h264 avdec_aac avdec_a
     fi
 done
 
+echo "== Android receiver pipeline self-test"
+if ( cd "$DIST/bin" && timeout 30 ./amreceiver.exe --selftest ) > "$ROOT/windows/work/amreceiver-ci.log" 2>&1; then
+    echo "ok      amreceiver selftest"
+else
+    echo "MISSING amreceiver selftest"
+    cat "$ROOT/windows/work/amreceiver-ci.log"
+    missing=1
+fi
+
 echo "== starting uxplay.exe for 12 seconds"
 ( cd "$DIST/bin" && timeout 12 ./uxplay.exe -n "CI Check" -nh -vs d3d11videosink -key "$KEY" ) > "$ROOT/windows/work/uxplay-ci.log" 2>&1
 code=$?

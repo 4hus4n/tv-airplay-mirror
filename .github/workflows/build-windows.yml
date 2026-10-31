@@ -57,7 +57,7 @@ jobs:
         if: always()
         run: |
           mkdir -p ci-logs
-          cp build.log verify.log windows/work/uxplay-ci.log ci-logs/ 2>/dev/null || true
+          cp build.log verify.log windows/work/uxplay-ci.log windows/work/amreceiver-ci.log ci-logs/ 2>/dev/null || true
           ls dist/AirMirror/lib/gstreamer-1.0 > ci-logs/plugins.txt 2>/dev/null || true
           ls dist/AirMirror/bin > ci-logs/bin.txt 2>/dev/null || true
           for f in ci-logs/*; do mv "$f" "$f.txt" 2>/dev/null; done
@@ -88,9 +88,12 @@ jobs:
           body: |
             AirPlay screen-mirroring receiver for Windows 10/11 (64-bit). Build 1.0.${{ github.run_number }}.
             Download **AirMirror-PC-Setup.exe**, install, then on your iPhone: Control Centre → Screen Mirroring → pick your PC.
+            Android phone: install **AirMirror-Sender.apk** from the latest release, open it, tap your PC.
+            Already installed? Right-click the tray icon → Check for updates.
             No-install option: AirMirror-PC-Portable.zip (extract, run AirMirror.exe).
           files: |
             dist/AirMirror-PC-Setup.exe
             dist/AirMirror-PC-Portable.zip
+            dist/pc-version.txt
           make_latest: false
           overwrite_files: true

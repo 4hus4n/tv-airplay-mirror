@@ -23,8 +23,12 @@ cp "$WORK/build/uxplay.exe" "$DIST/bin/"
 echo "== building tray launcher"
 windres "$ROOT/windows/launcher/airmirror.rc" -O coff -o "$WORK/airmirror_res.o" \
         --include-dir "$ROOT/windows/launcher"
-gcc -O2 -municode -mwindows -o "$DIST/AirMirror.exe" "$ROOT/windows/launcher/airmirror.c" \
-    "$WORK/airmirror_res.o" -static -static-libgcc -lshell32 -ladvapi32 -luser32 -lole32
+gcc -O2 -municode -mwindows -DAM_BUILD="${GITHUB_RUN_NUMBER:-0}" -o "$DIST/AirMirror.exe" "$ROOT/windows/launcher/airmirror.c" \
+    "$WORK/airmirror_res.o" -static -static-libgcc -lshell32 -ladvapi32 -luser32 -lole32 -lurlmon
+
+echo "== building Android receiver"
+gcc -O2 -o "$DIST/bin/amreceiver.exe" "$ROOT/windows/receiver/amreceiver.c" \
+    $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0) -lws2_32 -lshell32
 
 echo "== bundling GStreamer"
 cp "$PFX/bin/gst-inspect-1.0.exe" "$DIST/bin/"
@@ -57,4 +61,5 @@ done
 
 cp "$ROOT/LICENSE" "$DIST/LICENSE.txt"
 cp "$ROOT/windows/README-Windows.txt" "$DIST/README.txt"
+echo "${GITHUB_RUN_NUMBER:-0}" > "$ROOT/dist/pc-version.txt"
 echo "== bundle size: $(du -sh "$DIST" | cut -f1)"

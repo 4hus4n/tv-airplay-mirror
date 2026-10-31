@@ -4,6 +4,8 @@
  * Runs the bundled AirPlay receiver (UxPlay, bin\uxplay.exe) in the background
  * with the bundled GStreamer, shows a tray icon, restarts the receiver if it
  * stops, and offers: Change name, Start with Windows, Show log, Restart, Quit.
+ * Also runs bin\amreceiver.exe (Android phones via the AirMirror Sender app)
+ * and checks GitHub Releases for updates.
  */
 #define WIN32_LEAN_AND_MEAN
 #define UNICODE
@@ -13,6 +15,11 @@
 #include <shlobj.h>
 #include <wchar.h>
 #include <stdio.h>
+#include <urlmon.h>
+
+#ifndef AM_BUILD
+#define AM_BUILD 0
+#endif
 
 #define WM_TRAY          (WM_APP + 1)
 #define WM_CHILD_EXITED  (WM_APP + 2)
@@ -24,6 +31,14 @@
 #define IDM_RESTART      104
 #define IDM_QUIT         105
 #define IDM_FIREWALL     106
+#define IDM_UPDATE       107
+#define WM_UPDATE_FOUND  (WM_APP + 3)
+#define WM_UPDATE_NONE   (WM_APP + 4)
+#define WM_UPDATE_READY  (WM_APP + 5)
+#define WM_UPDATE_FAILED (WM_APP + 6)
+
+static const wchar_t *VERSION_URL = L"https://github.com/4hus4n/tv-airplay-mirror/releases/download/pc/pc-version.txt";
+static const wchar_t *SETUP_URL = L"https://github.com/4hus4n/tv-airplay-mirror/releases/download/pc/AirMirror-PC-Setup.exe";
 
 static const wchar_t *APP = L"AirMirror";
 static const wchar_t *RUN_KEY = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
@@ -38,6 +53,12 @@ static wchar_t g_dir[MAX_PATH];        /* install dir (folder of this exe) */
 static wchar_t g_data[MAX_PATH];       /* %LOCALAPPDATA%\AirMirror */
 static wchar_t g_name[128];
 static int g_failures = 0;
+static HANDLE g_android;               /* bin\amreceiver.exe (Android phones) */
+static HANDLE g_android_thread;
+static volatile LONG g_android_stop = 0;
+static int g_update_build = 0;         /* newer build found on GitHub, 0 = none */
+static volatile LONG g_update_busy = 0;
+static wchar_t g_setup_path[MAX_PATH];
 static DWORD g_last_start = 0;
 
 /* ------------------------------------------------------------ helpers */
@@ -227,10 +248,130 @@ static BOOL start_receiver(void) {
     return TRUE;
 }
 
+/* ------------------------------------------------------------ Android receiver */
+
+static BOOL launch_android(void) {
+    wchar_t bin[MAX_PATH], exe[MAX_PATH], logfile[MAX_PATH];
+    path_join(bin, MAX_PATH, g_dir, L"bin");
+    path_join(exe, MAX_PATH, bin, L"amreceiver.exe");
+    path_join(logfile, MAX_PATH, g_data, L"android-log.txt");
+    if (GetFileAttributesW(exe) == INVALID_FILE_ATTRIBUTES) return FALSE;
+    static wchar_t cmd[1024];
+    _snwprintf(cmd, 1024, L"\"%s\" -n \"%s\"", exe, g_name);
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
+    HANDLE log = CreateFileW(logfile, GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    if (log != INVALID_HANDLE_VALUE) {
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdOutput = log;
+        si.hStdError = log;
+    }
+    ZeroMemory(&pi, sizeof(pi));
+    /* environment (PATH, GStreamer paths) was already set up by start_receiver */
+    BOOL ok = CreateProcessW(NULL, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, bin, &si, &pi);
+    if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
+    if (!ok) return FALSE;
+    if (g_job) AssignProcessToJobObject(g_job, pi.hProcess);
+    ResumeThread(pi.hThread);
+    CloseHandle(pi.hThread);
+    g_android = pi.hProcess;
+    return TRUE;
+}
+
+/* keeps amreceiver.exe running; restarts it if it exits */
+static DWORD WINAPI android_keeper(LPVOID p) {
+    (void) p;
+    int quick_fails = 0;
+    while (!g_android_stop && !g_quitting) {
+        DWORD t0 = GetTickCount();
+        if (!launch_android()) return 0;
+        WaitForSingleObject(g_android, INFINITE);
+        CloseHandle(g_android);
+        g_android = NULL;
+        if (g_android_stop || g_quitting) break;
+        quick_fails = (GetTickCount() - t0 < 10000) ? quick_fails + 1 : 0;
+        if (quick_fails >= 5) return 0;
+        Sleep(1500);
+    }
+    return 0;
+}
+
+static void start_android(void) {
+    InterlockedExchange(&g_android_stop, 0);
+    g_android_thread = CreateThread(NULL, 0, android_keeper, NULL, 0, NULL);
+}
+
+static void stop_android(void) {
+    InterlockedExchange(&g_android_stop, 1);
+    HANDLE h = g_android;
+    if (h) TerminateProcess(h, 0);
+    if (g_android_thread) {
+        WaitForSingleObject(g_android_thread, 3000);
+        CloseHandle(g_android_thread);
+        g_android_thread = NULL;
+    }
+}
+
 static void restart_receiver(void) {
+    stop_android();
     stop_receiver();
     load_name();
     start_receiver();
+    start_android();
+}
+
+/* ------------------------------------------------------------ updates */
+
+static DWORD WINAPI update_check_thread(LPVOID p) {
+    BOOL silent = (BOOL) (INT_PTR) p;
+    wchar_t tmp[MAX_PATH], file[MAX_PATH], url[512];
+    GetTempPathW(MAX_PATH, tmp);
+    path_join(file, MAX_PATH, tmp, L"airmirror-pc-version.txt");
+    _snwprintf(url, 512, L"%s?t=%lu", VERSION_URL, GetTickCount());
+    DeleteFileW(file);
+    int build = 0;
+    if (URLDownloadToFileW(NULL, url, file, 0, NULL) == S_OK) {
+        FILE *f = _wfopen(file, L"rb");
+        if (f) {
+            if (fscanf(f, "%d", &build) != 1) build = 0;
+            fclose(f);
+        }
+        DeleteFileW(file);
+        PostMessageW(g_hwnd, build > AM_BUILD ? WM_UPDATE_FOUND : WM_UPDATE_NONE, (WPARAM) build, (LPARAM) silent);
+    } else {
+        PostMessageW(g_hwnd, WM_UPDATE_FAILED, 0, (LPARAM) silent);
+    }
+    InterlockedExchange(&g_update_busy, 0);
+    return 0;
+}
+
+static void check_updates(BOOL silent) {
+    if (InterlockedExchange(&g_update_busy, 1)) return;
+    HANDLE t = CreateThread(NULL, 0, update_check_thread, (LPVOID) (INT_PTR) silent, 0, NULL);
+    if (t) CloseHandle(t); else InterlockedExchange(&g_update_busy, 0);
+}
+
+static DWORD WINAPI update_download_thread(LPVOID p) {
+    (void) p;
+    wchar_t tmp[MAX_PATH], url[512];
+    GetTempPathW(MAX_PATH, tmp);
+    path_join(g_setup_path, MAX_PATH, tmp, L"AirMirror-PC-Setup.exe");
+    _snwprintf(url, 512, L"%s?t=%lu", SETUP_URL, GetTickCount());
+    DeleteFileW(g_setup_path);
+    HRESULT hr = URLDownloadToFileW(NULL, url, g_setup_path, 0, NULL);
+    PostMessageW(g_hwnd, hr == S_OK ? WM_UPDATE_READY : WM_UPDATE_FAILED, 0, 0);
+    InterlockedExchange(&g_update_busy, 0);
+    return 0;
+}
+
+static void install_update(void) {
+    if (InterlockedExchange(&g_update_busy, 1)) return;
+    balloon(APP, L"Downloading the AirMirror update...");
+    HANDLE t = CreateThread(NULL, 0, update_download_thread, NULL, 0, NULL);
+    if (t) CloseHandle(t); else InterlockedExchange(&g_update_busy, 0);
 }
 
 /* ------------------------------------------------------------ menu actions */
@@ -266,12 +407,16 @@ static void rename_receiver(void) {
 
 static void fix_firewall(void) {
     /* re-adds the inbound rule (needs admin, so ask via UAC) */
-    wchar_t exe[MAX_PATH], args[1024];
+    wchar_t exe[MAX_PATH], exe2[MAX_PATH], args[2048];
     path_join(exe, MAX_PATH, g_dir, L"bin\\uxplay.exe");
-    _snwprintf(args, 1024,
+    path_join(exe2, MAX_PATH, g_dir, L"bin\\amreceiver.exe");
+    _snwprintf(args, 2048,
                L"/c netsh advfirewall firewall delete rule name=\"AirMirror\" & "
                L"netsh advfirewall firewall add rule name=\"AirMirror\" dir=in action=allow "
-               L"program=\"%s\" enable=yes profile=any", exe);
+               L"program=\"%s\" enable=yes profile=any & "
+               L"netsh advfirewall firewall delete rule name=\"AirMirror Android\" & "
+               L"netsh advfirewall firewall add rule name=\"AirMirror Android\" dir=in action=allow "
+               L"program=\"%s\" enable=yes profile=any", exe, exe2);
     ShellExecuteW(NULL, L"runas", L"cmd.exe", args, NULL, SW_HIDE);
 }
 
@@ -288,6 +433,10 @@ static void show_menu(HWND hwnd) {
     AppendMenuW(m, MF_STRING, IDM_RESTART, L"Restart receiver");
     AppendMenuW(m, MF_STRING, IDM_FIREWALL, L"iPhone can't find PC? Fix firewall");
     AppendMenuW(m, MF_STRING, IDM_LOG, L"Show log");
+    wchar_t upd[96];
+    if (g_update_build) _snwprintf(upd, 96, L"Install update (build %d)", g_update_build);
+    else _snwprintf(upd, 96, L"Check for updates (build %d)", AM_BUILD);
+    AppendMenuW(m, MF_STRING | (g_update_build ? MF_DEFAULT : 0), IDM_UPDATE, upd);
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING, IDM_QUIT, L"Quit AirMirror");
     SetForegroundWindow(hwnd);
@@ -308,6 +457,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case IDM_RESTART: restart_receiver(); balloon(APP, L"Receiver restarted."); break;
         case IDM_FIREWALL: fix_firewall(); break;
         case IDM_LOG: open_log(); break;
+        case IDM_UPDATE: if (g_update_build) install_update(); else check_updates(FALSE); break;
         case IDM_QUIT: DestroyWindow(hwnd); break;
         }
         return 0;
@@ -326,8 +476,36 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
     }
+    case WM_UPDATE_FOUND: {
+        g_update_build = (int) wp;
+        wchar_t msg[160];
+        _snwprintf(msg, 160, L"A new version (build %d) is available. Right-click the tray icon > Install update.", g_update_build);
+        balloon(L"AirMirror update", msg);
+        return 0;
+    }
+    case WM_UPDATE_NONE:
+        if (!lp) {
+            wchar_t msg[96];
+            _snwprintf(msg, 96, L"AirMirror is up to date (build %d).", AM_BUILD);
+            balloon(APP, msg);
+        }
+        return 0;
+    case WM_UPDATE_FAILED:
+        if (!lp) balloon(APP, L"Couldn't reach GitHub to check for updates. Check the internet.");
+        return 0;
+    case WM_UPDATE_READY: {
+        /* silent install; the installer restarts AirMirror when it finishes */
+        HINSTANCE r = ShellExecuteW(NULL, L"runas", g_setup_path, L"/SILENT /SUPPRESSMSGBOXES /NORESTART", NULL, SW_SHOWNORMAL);
+        if ((INT_PTR) r > 32) DestroyWindow(hwnd);
+        else balloon(APP, L"Update cancelled.");
+        return 0;
+    }
+    case WM_TIMER:
+        if (wp == 1) { KillTimer(hwnd, 1); check_updates(TRUE); }
+        return 0;
     case WM_DESTROY:
         InterlockedExchange(&g_quitting, 1);
+        stop_android();
         stop_receiver();
         Shell_NotifyIconW(NIM_DELETE, &g_nid);
         PostQuitMessage(0);
@@ -386,9 +564,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmdline, int show) {
         Shell_NotifyIconW(NIM_DELETE, &g_nid);
         return 1;
     }
+    start_android();
+    SetTimer(g_hwnd, 1, 15000, NULL);   /* check for updates shortly after start */
     if (!quiet) {
         wchar_t msg[256];
-        _snwprintf(msg, 256, L"On your iPhone: Control Centre > Screen Mirroring > \"%s\"", g_name);
+        _snwprintf(msg, 256, L"iPhone: Control Centre > Screen Mirroring > \"%s\". Android: AirMirror Sender app.", g_name);
         balloon(L"AirMirror is ready", msg);
     }
 
