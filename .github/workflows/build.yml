@@ -39,12 +39,16 @@ jobs:
           }
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk AirMirror.apk
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk AirMirror.apk
+          cp sender/build/outputs/apk/release/sender-release.apk AirMirror-Sender.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: AirMirror-apk
-          path: AirMirror.apk
+          path: |
+            AirMirror.apk
+            AirMirror-Sender.apk
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
@@ -53,6 +57,10 @@ jobs:
           name: AirMirror v1.0.${{ github.run_number }}
           body: |
             AirPlay screen-mirroring receiver for Android TV.
-            Install **AirMirror.apk** on the TV, open it, then on your iPhone: Control Centre → Screen Mirroring → pick the TV.
-          files: AirMirror.apk
+            **AirMirror.apk** → install on the Android TV.
+            **AirMirror-Sender.apk** → install on an Android phone to mirror it to the TV or PC.
+            iPhone: Control Centre → Screen Mirroring → pick the TV (no app needed).
+          files: |
+            AirMirror.apk
+            AirMirror-Sender.apk
           make_latest: true

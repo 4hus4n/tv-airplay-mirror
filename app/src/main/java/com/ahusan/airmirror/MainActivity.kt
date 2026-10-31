@@ -25,7 +25,8 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.random.Random
 
-class MainActivity : AppCompatActivity(), AirPlayServer.Listener, VideoDecoder.Callback {
+class MainActivity : AppCompatActivity(), AirPlayServer.Listener, VideoDecoder.Callback,
+    SenderServer.Listener {
 
     private val ui = Handler(Looper.getMainLooper())
     private val prefs by lazy { getSharedPreferences("airmirror", Context.MODE_PRIVATE) }
@@ -37,10 +38,14 @@ class MainActivity : AppCompatActivity(), AirPlayServer.Listener, VideoDecoder.C
     private lateinit var pinView: TextView
     private lateinit var toast: TextView
     private lateinit var codeBtn: Button
+    private lateinit var updateBtn: Button
 
     private val server = AirPlayServer(this)
     private val video = VideoDecoder(this)
     private val audio = AudioPlayer()
+    private val senderServer = SenderServer({ tvName() }, this)
+    private var pendingUpdate: Updater.Info? = null
+    private var updating = false
     private var multicastLock: WifiManager.MulticastLock? = null
     private val serverExec = Executors.newSingleThreadExecutor()
     private var serverRunning = false
@@ -58,6 +63,8 @@ class MainActivity : AppCompatActivity(), AirPlayServer.Listener, VideoDecoder.C
         pinView = findViewById(R.id.pinView)
         toast = findViewById(R.id.toast)
         codeBtn = findViewById(R.id.codeBtn)
+        updateBtn = findViewById(R.id.updateBtn)
+        updateBtn.setOnClickListener { onUpdateClicked() }
 
         findViewById<SurfaceView>(R.id.surface).holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) = video.setSurface(holder.surface)
@@ -72,6 +79,7 @@ class MainActivity : AppCompatActivity(), AirPlayServer.Listener, VideoDecoder.C
         }
         findViewById<Button>(R.id.renameBtn).requestFocus()
         refreshIdleTexts()
+        checkForUpdate(silent = true)
     }
 
     override fun onStart() {
@@ -81,10 +89,12 @@ class MainActivity : AppCompatActivity(), AirPlayServer.Listener, VideoDecoder.C
         video.start()
         audio.start()
         startServer()
+        senderServer.start()
     }
 
     override fun onStop() {
         stopServer()
+        senderServer.stop()
         video.stop()
         audio.stop()
         multicastLock?.let { if (it.isHeld) it.release() }
@@ -181,6 +191,77 @@ class MainActivity : AppCompatActivity(), AirPlayServer.Listener, VideoDecoder.C
         ui.post { videoFrame.setAspectRatio(width, height) }
     }
 
+    // ------------------------------------------------------------------ Android phones (AirMirror Sender)
+
+    override fun onSenderConnected(phone: String) {
+        video.reset()
+        audio.setFormat(4)   // AAC-LC 44.1 kHz stereo
+        ui.post { showToast("Connecting: $phone") }
+    }
+
+    override fun onSenderVideo(data: ByteArray, ptsUs: Long) = video.push(data, ptsUs)
+
+    override fun onSenderAudio(data: ByteArray) = audio.push(data, 4)
+
+    override fun onSenderDisconnected() = onConnections(0)
+
+    // ------------------------------------------------------------------ updates
+
+    private fun onUpdateClicked() {
+        val info = pendingUpdate
+        if (info == null) checkForUpdate(silent = false) else downloadUpdate(info)
+    }
+
+    private fun checkForUpdate(silent: Boolean) {
+        if (updating) return
+        if (!silent) updateBtn.text = "Checking…"
+        Thread {
+            val result = try { Result.success(Updater.check(this, "AirMirror.apk")) } catch (e: Exception) { Result.failure(e) }
+            ui.post {
+                val info = result.getOrNull()
+                pendingUpdate = info
+                when {
+                    info != null -> {
+                        updateBtn.text = "Install update (build ${info.build})"
+                        if (silent) showToast("A new AirMirror update is available")
+                    }
+                    result.isFailure -> {
+                        updateBtn.text = "Check for updates"
+                        if (!silent) showToast("Couldn't check for updates. Check the internet.")
+                    }
+                    else -> {
+                        updateBtn.text = "Check for updates"
+                        if (!silent) showToast("AirMirror is up to date (build ${Updater.currentBuild(this)})")
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun downloadUpdate(info: Updater.Info) {
+        if (updating) return
+        updating = true
+        updateBtn.text = "Downloading… 0%"
+        Thread {
+            try {
+                val apk = Updater.download(this, info) { p -> ui.post { updateBtn.text = "Downloading… $p%" } }
+                ui.post {
+                    updating = false
+                    updateBtn.text = "Install update (build ${info.build})"
+                    if (!Updater.install(this, apk)) {
+                        showToast("Allow AirMirror to install apps, then press Install again")
+                    }
+                }
+            } catch (e: Exception) {
+                ui.post {
+                    updating = false
+                    updateBtn.text = "Install update (build ${info.build})"
+                    showToast("Download failed. Try again.")
+                }
+            }
+        }.start()
+    }
+
     private val hidePin = Runnable { pinView.visibility = View.GONE }
     private val hideToast = Runnable { toast.visibility = View.GONE }
 
@@ -189,6 +270,7 @@ class MainActivity : AppCompatActivity(), AirPlayServer.Listener, VideoDecoder.C
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && mirroring) {
             server.disconnect()
+            senderServer.disconnect()
             showToast("Disconnected")
             return true
         }
